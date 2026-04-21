@@ -1,4 +1,4 @@
-const CACHE_NAME = 'posture-pro-v2';
+const CACHE_NAME = 'posture-pro-v' + new Date().getTime(); // 使用時間戳作為版本號
 const ASSETS = [
     './',
     './index.html',
@@ -8,24 +8,43 @@ const ASSETS = [
     './src/main.js',
     './src/core/detector.js',
     './src/core/scorer.js',
-    './src/core/evaluator.js',
+    './src/core/communicator.js',
     './src/ui/camera.js',
     './src/ui/charts.js',
     './models/vision_bundle.js',
     './models/vision_wasm_internal.js',
     './models/vision_wasm_internal.wasm',
-    './models/vision_wasm_nosimd_internal.js',
-    './models/vision_wasm_nosimd_internal.wasm',
     './models/pose_landmarker.task',
     'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
+// 1. 安裝階段：強制跳過等待，立刻準備啟動
 self.addEventListener('install', (event) => {
+    self.skipWaiting(); 
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            console.log('[SW] Caching all assets for v2');
+            console.log('[SW] Caching new assets');
             return cache.addAll(ASSETS);
         })
+    );
+});
+
+// 2. 啟動階段：清理舊快取，並立刻接管頁面
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        Promise.all([
+            clients.claim(), // 立刻接管所有客戶端頁面
+            caches.keys().then((cacheNames) => {
+                return Promise.all(
+                    cacheNames.map((name) => {
+                        if (name !== CACHE_NAME) {
+                            console.log('[SW] Deleting old cache:', name);
+                            return caches.delete(name);
+                        }
+                    })
+                );
+            })
+        ])
     );
 });
 
