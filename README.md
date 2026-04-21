@@ -28,43 +28,67 @@
 
 ## 硬體端設定 (micro:bit) - 雙方案選擇
 
-請根據需求在 [MakeCode](https://makecode.microbit.org/) JavaScript 模式下貼入代碼：
-
 ### 方案 A：藍牙連線模式 (直接無線監控)
 *適合 1 台 micro:bit 無線監控。需在專案設定中勾選 "No Pairing Required"。*
 
 ```javascript
-bluetooth.onBluetoothConnected(() => basic.showIcon(IconNames.Happy))
-bluetooth.onBluetoothDisconnected(() => basic.showString("P"))
-
-bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), () => {
-    let cmd = bluetooth.uartReadUntil(serial.delimiters(Delimiters.NewLine)).trim()
-    if (cmd.includes("1")) basic.showIcon(IconNames.No)
-    else if (cmd.includes("0")) basic.showIcon(IconNames.Yes)
+// 代表 Pending (等待連線)
+// 2. 當藍牙連線成功
+bluetooth.onBluetoothConnected(function () {
+    // 代表 Connected
+    basic.showString("C")
 })
-
-bluetooth.startUartService()
-basic.showString("P")
-```
-
-### 方案 B：廣播發送模式 (1 對多群發)
-*適合電腦接 1 台 micro:bit 當「發射器 (Sender)」，多台配戴在身上當「接收器 (Receiver)」。*
-
-**發射器 (Sender) - 接電腦 USB：**
-```javascript
-radio.setGroup(1)
-serial.redirectToUSB()
-basic.showString("S")
-serial.onDataReceived(serial.delimiters(Delimiters.NewLine), () => {
-    let cmd = serial.readString().trim()
-    if (cmd == "1") {
-        radio.sendNumber(1) // 廣播 1 代表駝背
+// 4. 當藍牙斷線
+bluetooth.onBluetoothDisconnected(function () {
+    basic.clearScreen()
+    basic.showString("P")
+})
+// 3. 處理來自 Chrome 的藍牙指令
+bluetooth.onUartDataReceived("\n", function () {
+    // 讀取直到換行符號，並直接進行判斷
+    cmd = bluetooth.uartReadUntil("\n")
+    if (cmd.includes("1")) {
+        // 偵測到駝背 (Slouching) -> 顯示 X
         basic.showIcon(IconNames.No)
-    } else if (cmd == "0") {
-        radio.sendNumber(0) // 廣播 0 代表正常
+    } else if (cmd.includes("0")) {
+        // 姿勢正常 -> 顯示 O
         basic.showIcon(IconNames.Yes)
     }
 })
+let cmd = ""
+// 1. 初始化藍牙 UART 服務
+bluetooth.startUartService()
+// 代表 Pending (等待連線)
+basic.showString("P")
+```
+
+---
+
+### 方案 B：廣播發送模式 (1 對多群發)
+*電腦接一台 micro:bit 當「發射器 (Sender)」，多台配戴在身上當「接收器 (Receiver)」。*
+
+**發射器 (Sender) - 接電腦 USB：**
+```javascript
+// Sender
+serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+    let cmd = serial.readString().trim()
+    if (cmd == "1") {
+        // 廣播數字 1 (代表駝背)
+        radio.sendNumber(1)
+        basic.showIcon(IconNames.No)
+    } else if (cmd == "0") {
+        // 廣播數字 0 (代表正常)
+        radio.sendNumber(0)
+        basic.showIcon(IconNames.Yes)
+    }
+    basic.pause(200)
+    basic.clearScreen()
+})
+// 設定廣播群組 (0-255)，所有機器要一致
+radio.setGroup(1)
+serial.redirectToUSB()
+// Sender
+basic.showString("S")
 ```
 
 **接收器 (Receiver) - 配戴者身上：**
@@ -98,20 +122,6 @@ python3 tools/evaluator.py --dir ./my_test_images --out report.csv
 *   **Debug**: 核心關鍵點的 JSON 座標。
 
 ---
-
-## 目錄結構
-```text
-/hunchback
-├── /models          # MediaPipe 模型與 WASM 執行環境
-├── /src
-│   ├── /core        # 核心算法、通訊、偵測邏輯
-│   ├── /ui          # 攝影機渲染與 Chart.js 圖表
-│   └── main.js      # 應用程式中控
-├── /tools           # Python 驗證工具 (evaluator.py)
-├── index.html       # UI 佈局
-├── sw.js            # PWA 離線緩存邏輯
-└── manifest.json    # PWA 安裝設定
-```
 
 ## 快速啟動
 使用任何靜態伺服器開啟此目錄即可（必須使用 **HTTPS** 或 **localhost** 才能使用攝影機與藍牙）：
