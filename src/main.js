@@ -41,8 +41,8 @@ document.getElementById('connectBle').onclick = async () => {
         const s = await comms.connectBle();
         document.getElementById('conn-status').innerText = "狀態: " + s;
         document.getElementById('conn-status').style.color = "#00ff88";
-        // 連線後立即同步一次狀態
-        comms.notify(isCurrentSlouching);
+        // 連線後立即同步一次狀態 (使用 force=true)
+        await comms.notify(isCurrentSlouching, true);
     } catch (e) { alert("BLE 失敗: " + e.message); }
 };
 document.getElementById('connectUsb').onclick = async () => {
@@ -50,8 +50,8 @@ document.getElementById('connectUsb').onclick = async () => {
         const s = await comms.connectUsb();
         document.getElementById('conn-status').innerText = "狀態: " + s;
         document.getElementById('conn-status').style.color = "#00ff88";
-        // 連線後立即同步一次狀態
-        comms.notify(isCurrentSlouching);
+        // 連線後立即同步一次狀態 (使用 force=true)
+        await comms.notify(isCurrentSlouching, true);
     } catch (e) { alert("USB 失敗: " + e.message); }
 };
 
