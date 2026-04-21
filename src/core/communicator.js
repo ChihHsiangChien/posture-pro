@@ -1,5 +1,5 @@
 /**
- * Communicator.js - 增加 API 安全檢查
+ * Communicator.js - 增加連線穩定性與 Debug Log
  */
 
 export class Communicator {
@@ -15,15 +15,9 @@ export class Communicator {
     }
 
     async connectBle() {
-        // 安全檢查
-        if (!navigator.bluetooth) {
-            const msg = "您的瀏覽器或連線環境 (非 HTTPS) 不支援 Web Bluetooth API。";
-            console.error(msg);
-            throw new Error(msg);
-        }
+        if (!navigator.bluetooth) throw new Error("環境不支援 Web Bluetooth");
 
         try {
-            console.log("正在啟動藍牙搜尋...");
             this.bleDevice = await navigator.bluetooth.requestDevice({
                 acceptAllDevices: true, 
                 optionalServices: [this.UART_SERVICE_UUID]
@@ -38,35 +32,48 @@ export class Communicator {
             const service = await server.getPrimaryService(this.UART_SERVICE_UUID);
             this.uartCharacteristic = await service.getCharacteristic(this.UART_RX_CHAR_UUID);
             
+            console.log("✅ BLE UART 已連線");
             return "BLE 已連線";
         } catch (err) {
-            console.error("BLE 連線失敗:", err);
+            console.error("BLE 連線錯誤:", err);
             throw err;
         }
     }
 
     async connectUsb() {
-        if (!navigator.serial) {
-            throw new Error("您的瀏覽器不支援 Web Serial (USB) API。");
-        }
+        if (!navigator.serial) throw new Error("環境不支援 Web Serial");
         try {
             this.port = await navigator.serial.requestPort();
             await this.port.open({ baudRate: 115200 });
             this.writer = this.port.writable.getWriter();
             return "USB 已連線";
-        } catch (err) {
-            throw err;
-        }
+        } catch (err) { throw err; }
     }
 
     async notify(isSlouching) {
         const cmd = isSlouching ? "1\n" : "0\n";
         const encoder = new TextEncoder();
+        const data = encoder.encode(cmd);
+
         if (this.uartCharacteristic) {
-            try { await this.uartCharacteristic.writeValue(encoder.encode(cmd)); } catch (e) {}
+            try {
+                // 使用 writeValueWithResponse 確保數據確實送達
+                if (this.uartCharacteristic.writeValueWithResponse) {
+                    await this.uartCharacteristic.writeValueWithResponse(data);
+                } else {
+                    await this.uartCharacteristic.writeValue(data);
+                }
+                console.log("📤 BLE 已發送:", isSlouching ? "1" : "0");
+            } catch (err) { 
+                console.warn("BLE 傳送失敗:", err); 
+            }
         }
+        
         if (this.writer) {
-            try { await this.writer.write(encoder.encode(cmd)); } catch (e) {}
+            try {
+                await this.writer.write(data);
+                console.log("📤 USB 已發送:", isSlouching ? "1" : "0");
+            } catch (err) { console.warn("USB 傳送失敗:", err); }
         }
     }
 }
