@@ -57,7 +57,27 @@ self.addEventListener('activate', (event) => {
 
 ---
 
-## 4. 如何驗證 PWA 狀態？
+## 4. App 圖示自動化轉換流程
+
+為了確保 PWA 在不同裝置上的圖示解析度一致且邊緣平滑，本專案採用 **向量繪圖 (SVG) 轉 點陣圖 (PNG)** 的工作流。
+
+### 製作流程
+1.  **設計 SVG**：使用向量工具設計 `icon.svg`。優點是無論放大多少倍都不會失真。
+2.  **高品質轉換**：利用開源向量工具 **Inkscape** 透過命令行進行精準渲染，避免手動縮放造成的失真。
+
+### 自動化命令範例
+您可以透過以下命令快速產出 PWA 規格的圖示：
+```bash
+# 產出 512x512 高解析圖示 (啟動畫面使用)
+inkscape icon.svg --export-type=png --export-filename=icon-512.png -w 512 -h 512
+
+# 產出 192x192 標準圖示 (主畫面圖示使用)
+inkscape icon.svg --export-type=png --export-filename=icon-192.png -w 192 -h 192
+```
+
+---
+
+## 5. 如何驗證 PWA 狀態？
 
 1.  **開啟 Chrome 開發者工具 (F12)**。
 2.  切換到 **Application (應用程式)** 標籤。
