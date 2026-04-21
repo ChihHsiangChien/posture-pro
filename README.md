@@ -12,13 +12,13 @@
 系統透過夾角分數 ($S_A$) 與高度分數 ($S_H$) 的融合 ($\max$) 來判定姿勢，有效對抗遮擋。
 
 ### 3. 硬體聯動 (Communicator)
-*   **Web Bluetooth**：連線 micro:bit UART。
+*   **Web Bluetooth**：連線 micro:bit UART。具備 **GATT 傳輸鎖定** 機制，防止指令衝突。
 *   **Web Serial (USB)**：序列埠通訊。
 *   **狀態同步**：連線成功後立即同步狀態。
 
 ## 硬體端設定 (micro:bit) - UART 模式
 
-請使用 [MakeCode](https://makecode.microbit.org/) 並貼入以下代碼：
+請使用 [MakeCode](https://makecode.microbit.org/) 並貼入以下代碼。此版本使用了更魯棒的字串比對邏輯：
 
 ```javascript
 // 當藍牙連線成功時顯示 C
@@ -28,11 +28,13 @@ bluetooth.onBluetoothConnected(function () {
 
 // 接收來自 Web Bluetooth (UART) 的資料
 bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), function () {
-    // 讀取直到換行符號並去除空格
+    // 讀取直到換行符號
     let cmd = bluetooth.uartReadUntil(serial.delimiters(Delimiters.NewLine)).trim()
-    if (cmd == "1") {
+    
+    // 使用 includes 確保即使有雜訊也能識別指令
+    if (cmd.includes("1")) {
         basic.showIcon(IconNames.No)
-    } else if (cmd == "0") {
+    } else if (cmd.includes("0")) {
         basic.showIcon(IconNames.Yes)
     }
 })
@@ -40,9 +42,9 @@ bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), function () 
 // 接收來自 USB (Serial) 的資料
 serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
     let cmd = serial.readString().trim()
-    if (cmd == "1") {
+    if (cmd.includes("1")) {
         basic.showIcon(IconNames.No)
-    } else if (cmd == "0") {
+    } else if (cmd.includes("0")) {
         basic.showIcon(IconNames.Yes)
     }
 })
