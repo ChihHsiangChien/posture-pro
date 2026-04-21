@@ -1,5 +1,5 @@
 /**
- * Communicator.js - 解決 GATT operation already in progress 錯誤
+ * Communicator.js - 隊列化傳輸 (徹底解決 GATT 衝突)
  */
 
 export class Communicator {
@@ -8,15 +8,17 @@ export class Communicator {
         this.uartCharacteristic = null;
         this.port = null;
         this.writer = null;
-        this.isWriting = false; // 傳輸鎖定
-
+        
+        this.isBusy = false;
+        this.lastSentState = null; // 紀錄上次成功發送的狀態，避免重複發送
+        
         this.UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         this.UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
         this.onDisconnected = null;
     }
 
     async connectBle() {
-        if (!navigator.bluetooth) throw new Error("環境不支援 Web Bluetooth");
+        if (!navigator.bluetooth) throw new Error("不支援藍牙");
         try {
             this.bleDevice = await navigator.bluetooth.requestDevice({
                 acceptAllDevices: true, 
@@ -29,13 +31,12 @@ export class Communicator {
             const server = await this.bleDevice.gatt.connect();
             const service = await server.getPrimaryService(this.UART_SERVICE_UUID);
             this.uartCharacteristic = await service.getCharacteristic(this.UART_RX_CHAR_UUID);
-            console.log("✅ BLE UART 連線成功");
             return "BLE 已連線";
         } catch (err) { throw err; }
     }
 
     async connectUsb() {
-        if (!navigator.serial) throw new Error("環境不支援 Web Serial");
+        if (!navigator.serial) throw new Error("不支援 USB");
         try {
             this.port = await navigator.serial.requestPort();
             await this.port.open({ baudRate: 115200 });
@@ -44,33 +45,42 @@ export class Communicator {
         } catch (err) { throw err; }
     }
 
+    /**
+     * 強力通知函數：具備防抖與隊列鎖定
+     */
     async notify(isSlouching) {
-        // 如果正在傳輸中，跳過此指令，避免 GATT 錯誤
-        if (this.isWriting) return;
+        // 1. 如果狀態沒變，且不是強制發送，則跳過
+        if (this.lastSentState === isSlouching) return;
+        
+        // 2. 如果藍牙正忙，則跳過此幀（反正下一幀還會再嘗試）
+        if (this.isBusy) return;
 
         const cmd = isSlouching ? "1\n" : "0\n";
         const encoder = new TextEncoder();
         const data = encoder.encode(cmd);
 
-        if (this.uartCharacteristic) {
-            try {
-                this.isWriting = true;
-                // 使用 writeValue 即可，較能避免長時間佔用
+        this.isBusy = true;
+
+        try {
+            // BLE 傳輸
+            if (this.uartCharacteristic) {
                 await this.uartCharacteristic.writeValue(data);
-                console.log("📤 BLE 發送成功:", isSlouching ? "1" : "0");
-            } catch (err) {
-                console.warn("BLE 傳送失敗:", err.message);
-            } finally {
-                // 無論成功失敗，0.1秒後解除鎖定，允許下一次傳送
-                setTimeout(() => { this.isWriting = false; }, 100);
+                console.log("📤 BLE 傳送:", isSlouching ? "1" : "0");
+                this.lastSentState = isSlouching;
             }
-        }
-        
-        if (this.writer) {
-            try {
+            
+            // USB 傳送
+            if (this.writer) {
                 await this.writer.write(data);
-                console.log("📤 USB 發送成功:", isSlouching ? "1" : "0");
-            } catch (err) { console.warn("USB 傳送失敗:", err); }
+                this.lastSentState = isSlouching;
+            }
+        } catch (err) {
+            console.warn("傳送失敗:", err.message);
+        } finally {
+            // 強制等待 150ms 呼吸時間，micro:bit 處理 UART 需要時間
+            setTimeout(() => {
+                this.isBusy = false;
+            }, 150);
         }
     }
 }

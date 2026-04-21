@@ -130,7 +130,7 @@ async function init() {
 
                     if (isSlouchingNow !== isCurrentSlouching) {
                         isCurrentSlouching = isSlouchingNow;
-                        comms.notify(isCurrentSlouching);
+                        await comms.notify(isCurrentSlouching);
                     }
                     document.getElementById('angle-score').innerText = scoreData.angle.toFixed(1) + "°";
                     document.getElementById('total-confidence').innerText = scoreData.score.toFixed(2);
