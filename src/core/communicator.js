@@ -1,5 +1,5 @@
 /**
- * Communicator.js - 隊列化傳輸 (徹底解決 GATT 衝突)
+ * Communicator.js - 精準搜尋 micro:bit 與 穩定傳輸版
  */
 
 export class Communicator {
@@ -10,8 +10,9 @@ export class Communicator {
         this.writer = null;
         
         this.isBusy = false;
-        this.lastSentState = null; // 紀錄上次成功發送的狀態，避免重複發送
+        this.lastSentState = null;
         
+        // micro:bit UART Service UUIDs
         this.UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         this.UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
         this.onDisconnected = null;
@@ -19,20 +20,39 @@ export class Communicator {
 
     async connectBle() {
         if (!navigator.bluetooth) throw new Error("不支援藍牙");
+        
         try {
+            console.log("正在精準搜尋 micro:bit...");
+            // 修正：只搜尋 micro:bit 並明確要求 UART 服務
             this.bleDevice = await navigator.bluetooth.requestDevice({
-                acceptAllDevices: true, 
+                filters: [
+                    { namePrefix: "BBC micro:bit" },
+                    { namePrefix: "micro:bit" }
+                ],
                 optionalServices: [this.UART_SERVICE_UUID]
             });
+
             this.bleDevice.addEventListener('gattserverdisconnected', () => {
                 this.uartCharacteristic = null;
+                this.isBusy = false;
                 if (this.onDisconnected) this.onDisconnected("BLE");
             });
+
             const server = await this.bleDevice.gatt.connect();
+            
+            // 等待一下下讓 GATT 服務探索完成 (重要)
+            await new Promise(r => setTimeout(r, 500));
+
             const service = await server.getPrimaryService(this.UART_SERVICE_UUID);
             this.uartCharacteristic = await service.getCharacteristic(this.UART_RX_CHAR_UUID);
+            
+            this.lastSentState = null; // 重置狀態強制同步
+            console.log("✅ micro:bit (BLE) 連線成功");
             return "BLE 已連線";
-        } catch (err) { throw err; }
+        } catch (err) {
+            console.error("BLE 連線失敗:", err);
+            throw err;
+        }
     }
 
     async connectUsb() {
@@ -41,19 +61,14 @@ export class Communicator {
             this.port = await navigator.serial.requestPort();
             await this.port.open({ baudRate: 115200 });
             this.writer = this.port.writable.getWriter();
+            this.lastSentState = null;
             return "USB 已連線";
         } catch (err) { throw err; }
     }
 
-    /**
-     * 強力通知函數：具備防抖與隊列鎖定
-     */
-    async notify(isSlouching) {
-        // 1. 如果狀態沒變，且不是強制發送，則跳過
-        if (this.lastSentState === isSlouching) return;
-        
-        // 2. 如果藍牙正忙，則跳過此幀（反正下一幀還會再嘗試）
+    async notify(isSlouching, force = false) {
         if (this.isBusy) return;
+        if (!force && this.lastSentState === isSlouching) return;
 
         const cmd = isSlouching ? "1\n" : "0\n";
         const encoder = new TextEncoder();
@@ -62,25 +77,21 @@ export class Communicator {
         this.isBusy = true;
 
         try {
-            // BLE 傳輸
             if (this.uartCharacteristic) {
-                await this.uartCharacteristic.writeValue(data);
-                console.log("📤 BLE 傳送:", isSlouching ? "1" : "0");
+                // 使用 writeValueWithResponse 比 writeValue 更穩定
+                await this.uartCharacteristic.writeValueWithResponse(data);
                 this.lastSentState = isSlouching;
+                console.log("📤 BLE 發送:", cmd.trim());
             }
-            
-            // USB 傳送
             if (this.writer) {
                 await this.writer.write(data);
                 this.lastSentState = isSlouching;
             }
         } catch (err) {
-            console.warn("傳送失敗:", err.message);
+            console.warn("傳送失敗 (GATT 忙碌或權限問題):", err.message);
         } finally {
-            // 強制等待 150ms 呼吸時間，micro:bit 處理 UART 需要時間
-            setTimeout(() => {
-                this.isBusy = false;
-            }, 150);
+            // 增加呼吸時間到 200ms 確保 micro:bit 處理完畢
+            setTimeout(() => { this.isBusy = false; }, 200);
         }
     }
 }
