@@ -5,96 +5,51 @@
 ## 核心功能
 
 ### 1. 離線偵測 (PWA)
-*   **本地模型化**：MediaPipe 資源本地化，支援 GitHub Pages 完全離線執行。
-*   **無依賴建構**：採用純 HTML/JS (ESM) 架構。
+所有 MediaPipe 資源皆本地化，支援 GitHub Pages 完全離線執行，具備自動更新與快取控制機制。
 
-### 2. 信心分數計算 (Scorer)
-系統透過夾角分數 ($S_A$) 與高度分數 ($S_H$) 的融合來判定姿勢。
+### 2. 人體工學判斷原理 (綜合信心值)
+系統不採用單一判斷，而是透過兩項關鍵指標的 **MAX 融合算法** 計算信心值 (0.0~1.0)：
 
-### 3. 硬體聯動 (Communicator)
-*   **Web Bluetooth**：連線 micro:bit UART。
-*   **Web Serial (USB)**：序列埠通訊。
+*   **軀幹角度分數 ($S_A$)**：監控背部彎曲程度。
+    *   計算 **耳-肩-臀** 的夾角。180° 代表端正 (0.0)，150° 代表駝背 (1.0)。
+*   **眼耳高度分數 ($S_H$)**：監控「低頭」與「烏龜頸」現象。
+    *   計算 **眼睛與耳朵的垂直位移**，並以耳距（臉部比例）進行正規化，確保不受距離鏡頭遠近影響。
+*   **融合邏輯**：$\text{Final Score} = \max(S_A, S_H)$。
+    *   只要「背彎了」或「頭低了」任一項特徵觸發，系統即視為姿勢不良。
+
+### 3. 硬體聯動
+*   **Web Bluetooth (UART)**：無線連線 micro:bit，具備 GATT 鎖定機制確保傳輸不卡死。
+*   **Web Serial (USB)**：序列埠同步支援。
+
+### 4. 數據監控
+*   **動態門檻 (T)**：使用者可調整 $T$ 值來決定系統的靈敏度。
+*   **歷史紀錄**：自動繪製帶有時間戳記的 24H 姿勢趨勢圖。
 
 ---
 
 ## 硬體端設定 (micro:bit) - 雙方案選擇
 
-請根據您的使用情境，在 [MakeCode](https://makecode.microbit.org/) 中貼入對應的代碼。
-
 ### 方案 A：藍牙連線模式 (直接無線監控)
-*適合手邊只有 1 台 micro:bit，且希望透過藍牙無線與電腦連線時使用。*
-
 ```javascript
-// 1. 初始化藍牙 UART 服務
-bluetooth.startUartService()
-basic.showString("P") // Pending (等待連線)
-
-// 2. 當藍牙連線成功
-bluetooth.onBluetoothConnected(function () {
-    basic.showString("C") // Connected (已連線)
-})
-
-// 3. 處理來自瀏覽器的藍牙指令
-bluetooth.onUartDataReceived("\n", function () {
+bluetooth.onBluetoothConnected(() => basic.showString("C"))
+bluetooth.onUartDataReceived("\n", () => {
     let cmd = bluetooth.uartReadUntil("\n")
-    if (cmd.includes("1")) {
-        basic.showIcon(IconNames.No) // 駝背顯示 X
-    } else if (cmd.includes("0")) {
-        basic.showIcon(IconNames.Yes) // 正常顯示 O
-    }
+    if (cmd.includes("1")) basic.showIcon(IconNames.No)
+    else if (cmd.includes("0")) basic.showIcon(IconNames.Yes)
 })
-
-// 4. 當藍牙斷線
-bluetooth.onBluetoothDisconnected(function () {
-    basic.clearScreen()
-    basic.showString("P")
-})
+bluetooth.startUartService()
+basic.showString("P")
 ```
-*註：需在專案設定中勾選 "No Pairing Required"。*
-
----
 
 ### 方案 B：廣播發送模式 (1 對多群發)
-*適合電腦接 1 台 micro:bit 當「發射器」，並讓其他多台 micro:bit 當「接收器」配戴在身上時使用。*
-
-**發射器代碼 (接電腦 USB)：**
-```javascript
-radio.setGroup(1) // 群組編號
-serial.redirectToUSB()
-basic.showString("S") // Sender (發送器)
-
-serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
-    let cmd = serial.readString().trim()
-    if (cmd == "1") {
-        radio.sendNumber(1) // 廣播 1 代表駝背
-        basic.showIcon(IconNames.No)
-    } else if (cmd == "0") {
-        radio.sendNumber(0) // 廣播 0 代表正常
-        basic.showIcon(IconNames.Yes)
-    }
-    basic.pause(200)
-    basic.clearScreen()
-})
-```
-
-**接收器代碼 (配戴者身上)：**
-```javascript
-radio.setGroup(1)
-radio.onReceivedNumber(function (receivedNumber) {
-    if (receivedNumber == 1) {
-        basic.showIcon(IconNames.No)
-    } else {
-        basic.showIcon(IconNames.Yes)
-    }
-})
-```
+適合由一台 micro:bit 接電腦當發射器，多台配戴在身上當接收器（代碼詳見 EVALUATION.md 或過往紀錄）。
 
 ---
 
-## 實驗數據格式 (CSV)
-匯出的 `Experiment_Detailed_Report.csv` 包含基礎標籤、幾何特徵、模型信心度與關鍵點座標。
-
 ## 快速啟動
-```bash
-python3 -m http.server 8000
-```
+1. 確保使用 **HTTPS** 或 **localhost** 開啟。
+2. 點擊「連接 micro:bit」。
+3. 坐姿端正後點擊「校正標準姿勢」以自動設定門檻。
+
+## 系統驗證
+開發者可使用 `tools/evaluator.py` 進行大規模數據集測試，詳細說明請見 [EVALUATION.md](./EVALUATION.md)。
