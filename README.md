@@ -48,17 +48,35 @@ basic.showString("P")
 ```
 
 ### 方案 B：廣播發送模式 (1 對多群發)
-*電腦接一台 micro:bit 當發射器，其他多台當接收器。*
+*適合電腦接 1 台 micro:bit 當「發射器 (Sender)」，多台配戴在身上當「接收器 (Receiver)」。*
 
-**發射器 (USB 接電腦)：**
+**發射器 (Sender) - 接電腦 USB：**
 ```javascript
 radio.setGroup(1)
 serial.redirectToUSB()
 basic.showString("S")
 serial.onDataReceived(serial.delimiters(Delimiters.NewLine), () => {
     let cmd = serial.readString().trim()
-    if (cmd == "1") radio.sendNumber(1)
-    else if (cmd == "0") radio.sendNumber(0)
+    if (cmd == "1") {
+        radio.sendNumber(1) // 廣播 1 代表駝背
+        basic.showIcon(IconNames.No)
+    } else if (cmd == "0") {
+        radio.sendNumber(0) // 廣播 0 代表正常
+        basic.showIcon(IconNames.Yes)
+    }
+})
+```
+
+**接收器 (Receiver) - 配戴者身上：**
+```javascript
+radio.setGroup(1)
+basic.showString("R")
+radio.onReceivedNumber(function (receivedNumber) {
+    if (receivedNumber == 1) {
+        basic.showIcon(IconNames.No)
+    } else {
+        basic.showIcon(IconNames.Yes)
+    }
 })
 ```
 
