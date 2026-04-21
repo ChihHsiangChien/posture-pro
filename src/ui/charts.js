@@ -1,5 +1,5 @@
 /**
- * Charts.js - 修復時間標籤顯示不全的問題
+ * Charts.js - 修復圖表看不到的問題
  */
 
 export class ChartUI {
@@ -10,6 +10,8 @@ export class ChartUI {
     static initHistoryChart(canvasId) {
         this.historyCanvas = document.getElementById(canvasId);
         this.historyCtx = this.historyCanvas.getContext('2d');
+        // 初始化時先畫一次空的
+        this.drawHistory([]);
     }
 
     static drawPRCurve(canvasId, metrics) {
@@ -43,36 +45,42 @@ export class ChartUI {
         
         const spacing = 4;
         const barWidth = 15;
-        const labelHeight = 60; // 增加底部標籤高度 (原為 30)
+        const labelHeight = 60;
         
-        // 設定 Canvas 總高度，確保有足夠空間
+        // 確保寬度至少是容器寬度
+        const containerWidth = canvas.parentElement.clientWidth || window.innerWidth;
+        const neededWidth = log.length * (barWidth + spacing) + 50;
+        canvas.width = Math.max(containerWidth, neededWidth);
         canvas.height = 200; 
-        canvas.width = Math.max(window.innerWidth * 0.9, log.length * (barWidth + spacing) + 50);
-        
+
+        // 背景
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // 如果沒數據，畫個提示字
+        if (log.length === 0) {
+            ctx.fillStyle = "#444";
+            ctx.font = "14px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("尚無歷史數據 (每 5 秒紀錄一次)", canvas.width / 2, canvas.height / 2);
+            return;
+        }
+
         log.forEach((entry, i) => {
             const x = i * (barWidth + spacing) + 10;
-            
-            // 1. 繪製長條
             ctx.fillStyle = entry.status === 1 ? "#ff4444" : "#00ff88";
             const maxH = canvas.height - labelHeight - 20;
             const h = entry.status === 1 ? maxH * 0.8 : maxH * 0.4;
             ctx.fillRect(x, canvas.height - labelHeight - h, barWidth, h);
 
-            // 2. 繪製時間標籤 (每 5 筆資料畫一個)
             if (i % 5 === 0) {
                 ctx.fillStyle = "#aaa";
                 ctx.font = "11px monospace";
                 ctx.save();
-                // 移動到長條底部下方
                 ctx.translate(x + barWidth / 2, canvas.height - labelHeight + 5);
-                ctx.rotate(Math.PI / 4); // 旋轉 45 度
+                ctx.rotate(Math.PI / 4);
                 ctx.textAlign = "left";
                 ctx.textBaseline = "middle";
-                
-                // 簡化時間格式 (只取 HH:MM:SS)
                 const timeStr = entry.time.replace(/[^\d:]/g, ''); 
                 ctx.fillText(timeStr, 0, 0);
                 ctx.restore();
