@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Posture Pro - 姿態辨識與性能評估系統</title>
+    <title>Posture Pro - 姿態辨識與離線監控系統</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #00ff88; --bg: #121212; --panel: #1e1e1e; }
         body { margin: 0; background: var(--bg); color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
         
-        /* 載入遮罩樣式 */
         #loading-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
@@ -25,13 +24,11 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         nav { width: 100%; background: var(--panel); padding: 10px; display: flex; justify-content: center; gap: 20px; border-bottom: 1px solid #333; }
-        nav button { background: none; border: none; color: #aaa; cursor: pointer; font-size: 16px; padding: 5px 10px; }
-        nav button.active { color: var(--primary); border-bottom: 2px solid var(--primary); }
+        nav .brand { color: var(--primary); font-weight: bold; font-size: 1.2em; }
         
-        .container { width: 95%; max-width: 1000px; margin-top: 20px; display: none; }
-        .container.active { display: block; }
-
-        .ui-panel { background: var(--panel); padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #333; }
+        .container { width: 95%; max-width: 1000px; margin-top: 20px; }
+        .ui-panel { background: var(--panel); padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #333; position: relative; }
+        
         button { background: #333; color: white; border: 1px solid #555; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin: 5px; }
         button:hover { background: #444; }
         button.primary { border-color: var(--primary); color: var(--primary); }
@@ -43,9 +40,9 @@
         .score-good { color: var(--primary); }
         .score-bad { color: #ff4444; }
 
-        /* 圖表區域 */
         #history-container { width: 100%; height: 200px; overflow-x: auto; background: #000; margin-top: 10px; border: 1px solid #333; position: relative; }
         #history-canvas { display: block; height: 100%; }
+        #stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; text-align: center; }
         .stat-card { background: #252525; padding: 10px; border-radius: 4px; }
         .stat-card small { color: #888; display: block; }
     </style>
@@ -58,12 +55,10 @@
 </div>
 
 <nav>
-    <button id="nav-live" class="active">即時監控</button>
-    <button id="nav-batch">批次評估 (Batch)</button>
+    <div class="brand">Posture Pro 即時監控中心</div>
 </nav>
 
-<!-- 即時監控頁面 -->
-<div id="camera-section" class="container active">
+<div id="camera-section" class="container">
     <div class="ui-panel">
         <button id="connectBle">連接 micro:bit (BLE)</button>
         <button id="connectUsb">連接 micro:bit (USB)</button>
@@ -94,33 +89,14 @@
             <input type="range" id="threshold-slider" min="0" max="1" step="0.01" value="0.5" style="width:100%;">
         </div>
 
-        <!-- 歷史統計 -->
         <div id="history-container">
-            <canvas id="history-canvas" height="150"></canvas>
+            <canvas id="history-canvas" height="200"></canvas>
         </div>
         <div id="stats-grid">
             <div class="stat-card"><small>正常次數</small><span id="goodCount">0</span></div>
             <div class="stat-card"><small>駝背次數</small><span id="badCount" style="color:#ff4444;">0</span></div>
             <div class="stat-card"><small>總紀錄</small><span id="totalCount">0</span></div>
             <div class="stat-card"><small>駝背比例</small><span id="badRatio">0%</span></div>
-        </div>
-    </div>
-</div>
-
-<!-- 批次評估頁面 -->
-<div id="batch-section" class="container">
-    <div class="ui-panel">
-        <h3>離線圖片批次測試</h3>
-        <input type="file" id="batch-input" multiple accept="image/*">
-        <button id="run-batch" class="primary">開始執行</button>
-        <button id="downloadBatchCsv" style="display:none;">下載實驗詳細報表 (CSV)</button>
-        
-        <div id="results-area" style="display:none; margin-top: 20px;">
-            <canvas id="pr-curve-chart"></canvas>
-            <table style="width:100%; margin-top:15px; text-align:left; border-collapse:collapse;">
-                <thead><tr style="border-bottom:1px solid #444;"><th>門檻</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead>
-                <tbody id="metrics-body"></tbody>
-            </table>
         </div>
     </div>
 </div>

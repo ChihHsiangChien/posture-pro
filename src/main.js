@@ -1,20 +1,18 @@
 /**
- * Main.js - 修復按鈕失效與鏡頭切換
+ * Main.js - 系統整合與中控邏輯 (輕量化版)
  */
 
 import { PoseDetector } from './core/detector.js';
 import { PostureScorer } from './core/scorer.js';
-import { Evaluator } from './core/evaluator.js';
 import { Communicator } from './core/communicator.js';
 import { CameraUI } from './ui/camera.js';
 import { ChartUI } from './ui/charts.js';
 
 const detector = new PoseDetector();
-const evaluator = new Evaluator();
 const comms = new Communicator();
 const camera = new CameraUI('output-canvas');
 
-// 狀態變數
+// 系統狀態
 let currentFacingMode = "user";
 let threshold = 0.5;
 let postureLog = [];
@@ -23,17 +21,13 @@ let isCurrentSlouching = false;
 let slouchEMA = 0;
 const smoothingAlpha = 0.3;
 
-// --- 1. 立即綁定按鈕 (不等待模型初始化) ---
+// --- 註冊 PWA Service Worker ---
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+        .then(() => console.log('Service Worker Registered'));
+}
 
-// 導覽切換
-const switchTab = (sectionId, navId) => {
-    document.querySelectorAll('.container').forEach(c => c.classList.remove('active'));
-    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-    document.getElementById(sectionId).classList.add('active');
-    document.getElementById(navId).classList.add('active');
-};
-document.getElementById('nav-live').onclick = () => switchTab('camera-section', 'nav-live');
-document.getElementById('nav-batch').onclick = () => switchTab('batch-section', 'nav-batch');
+// --- 立即綁定按鈕 (不等待模型初始化) ---
 
 // micro:bit 連線
 document.getElementById('connectBle').onclick = async () => {
@@ -41,16 +35,15 @@ document.getElementById('connectBle').onclick = async () => {
         const s = await comms.connectBle();
         document.getElementById('conn-status').innerText = "狀態: " + s;
         document.getElementById('conn-status').style.color = "#00ff88";
-        // 連線後立即同步一次狀態 (使用 force=true)
         await comms.notify(isCurrentSlouching, true);
     } catch (e) { alert("BLE 失敗: " + e.message); }
 };
+
 document.getElementById('connectUsb').onclick = async () => {
     try {
         const s = await comms.connectUsb();
         document.getElementById('conn-status').innerText = "狀態: " + s;
         document.getElementById('conn-status').style.color = "#00ff88";
-        // 連線後立即同步一次狀態 (使用 force=true)
         await comms.notify(isCurrentSlouching, true);
     } catch (e) { alert("USB 失敗: " + e.message); }
 };
@@ -69,55 +62,60 @@ document.getElementById('calibrateBtn').onclick = () => {
     document.getElementById('threshold-val').innerText = threshold.toFixed(2);
     alert("校正新門檻: " + threshold.toFixed(2));
 };
+
 document.getElementById('resetThresholdBtn').onclick = () => {
     threshold = 0.5;
     document.getElementById('threshold-slider').value = 0.5;
     document.getElementById('threshold-val').innerText = "0.50";
 };
+
 document.getElementById('threshold-slider').oninput = (e) => {
     threshold = parseFloat(e.target.value);
     document.getElementById('threshold-val').innerText = threshold.toFixed(2);
 };
 
-// 下載與清除
+// 下載與清除紀錄
 document.getElementById('downloadCsv').onclick = () => {
-    if (postureLog.length === 0) return alert("無紀錄");
+    if (postureLog.length === 0) return alert("尚無紀錄");
     let csv = "Time,Status,Score\n";
-    postureLog.forEach(e => csv += `${e.time},${e.status},${e.score}\n`);
+    postureLog.forEach(e => {
+        csv += `${e.time},${e.status === 1 ? "Bad" : "Good"},${e.score.toFixed(3)}\n`;
+    });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    a.download = "report.csv"; a.click();
+    a.download = `posture_report_${new Date().getTime()}.csv`;
+    a.click();
 };
-document.getElementById('clearLog').onclick = () => { postureLog = []; ChartUI.drawHistory([]); };
 
-// --- 2. 系統初始化與偵測迴圈 ---
+document.getElementById('clearLog').onclick = () => {
+    if (confirm("確定要清除所有紀錄嗎？")) {
+        postureLog = [];
+        ChartUI.drawHistory(postureLog);
+    }
+};
+
+// --- 系統初始化與偵測迴圈 ---
 
 async function init() {
     const loadingText = document.getElementById('loading-text');
     const loadingOverlay = document.getElementById('loading-overlay');
     
     try {
-        // 階段 1: 攝影機
         loadingText.innerText = "正在啟動攝影機...";
         await camera.start(currentFacingMode);
         ChartUI.initHistoryChart('history-canvas');
 
-        // 階段 2: 模型
         loadingText.innerText = "正在載入 AI 模型 (約需數秒)...";
         await detector.init();
         
-        // 階段 3: 完成
         loadingText.innerText = "完成！";
         setTimeout(() => {
             loadingOverlay.style.opacity = '0';
             setTimeout(() => loadingOverlay.style.display = 'none', 500);
         }, 500);
 
-        console.log("系統已就緒");
-
         const detectLoop = async () => {
             try {
-                // 使用 camera.video 確保永遠指向當前啟用的攝影機
                 const results = await detector.detect(camera.video, performance.now());
                 const landmarks = (results && results.landmarks) ? results.landmarks : null;
                 const showLandmarks = document.getElementById('showLandmarks').checked;
@@ -131,10 +129,18 @@ async function init() {
                     if (isSlouchingNow !== isCurrentSlouching) {
                         isCurrentSlouching = isSlouchingNow;
                         await comms.notify(isCurrentSlouching);
+                        if (isCurrentSlouching && document.getElementById('enableAudio').checked) {
+                            playBeep();
+                        }
                     }
+
                     document.getElementById('angle-score').innerText = scoreData.angle.toFixed(1) + "°";
                     document.getElementById('total-confidence').innerText = scoreData.score.toFixed(2);
                     document.getElementById('posture-status').innerText = isCurrentSlouching ? "❌ 駝背中" : "✅ 姿勢良好";
+                    document.getElementById('posture-status').className = isCurrentSlouching ? "score-bad" : "score-good";
+                } else {
+                    document.getElementById('posture-status').innerText = "等待偵測...";
+                    document.getElementById('posture-status').className = "";
                 }
                 camera.draw(landmarks, isCurrentSlouching, showLandmarks);
             } catch (e) { console.error(e); }
@@ -144,5 +150,28 @@ async function init() {
     } catch (err) { alert("啟動失敗: " + err.message); }
 }
 
-// 啟動
+// 定時紀錄
+setInterval(() => {
+    if (detector.landmarker) {
+        postureLog.push({
+            time: new Date().toLocaleTimeString(),
+            status: isCurrentSlouching ? 1 : 0,
+            score: lastCalculatedScore
+        });
+        ChartUI.drawHistory(postureLog);
+    }
+}, 5000);
+
+function playBeep() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    } catch (e) {}
+}
+
 init();
