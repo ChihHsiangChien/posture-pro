@@ -2,44 +2,28 @@
 
 這是一個基於 MediaPipe Pose Landmarker 的現代化 Web 應用程式，旨在實現 100% 離線姿態監控與硬體聯動。
 
-## 核心功能
-
-### 1. 離線偵測 (PWA)
-*   **本地模型化**：所有 MediaPipe 資源均存放於 `/models`，由 Service Worker 快取。
-*   **無依賴建構**：採用純 HTML/JS (ESM) 架構。
-
-### 2. 信心分數計算 (Scorer)
-系統透過夾角分數 ($S_A$) 與高度分數 ($S_H$) 的融合 ($\max$) 來判定姿勢，有效對抗遮擋。
-
-### 3. 硬體聯動 (Communicator)
-*   **Web Bluetooth**：連線 micro:bit UART。具備 **GATT 傳輸鎖定** 機制，防止指令衝突。
-*   **Web Serial (USB)**：序列埠通訊。
-*   **狀態同步**：連線成功後立即同步狀態。
-
 ## 硬體端設定 (micro:bit) - UART 模式
 
-請使用 [MakeCode](https://makecode.microbit.org/) 並貼入以下代碼。此版本使用了更魯棒的字串比對邏輯：
+請使用 [MakeCode](https://makecode.microbit.org/) 並貼入以下代碼進行測試。此版本包含了笑臉反饋以確認連線成功。
 
 ```javascript
-// 當藍牙連線成功時顯示 C
+// 當藍牙連線成功時，立刻顯示笑臉
 bluetooth.onBluetoothConnected(function () {
-    basic.showString("C")
+    basic.showIcon(IconNames.Happy)
 })
 
-// 接收來自 Web Bluetooth (UART) 的資料
+// 接收資料邏輯
 bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), function () {
-    // 讀取直到換行符號
     let cmd = bluetooth.uartReadUntil(serial.delimiters(Delimiters.NewLine)).trim()
     
-    // 使用 includes 確保即使有雜訊也能識別指令
     if (cmd.includes("1")) {
-        basic.showIcon(IconNames.No)
+        basic.showIcon(IconNames.No) // 顯示 X
     } else if (cmd.includes("0")) {
-        basic.showIcon(IconNames.Yes)
+        basic.showIcon(IconNames.Yes) // 顯示 O
     }
 })
 
-// 接收來自 USB (Serial) 的資料
+// 接收來自 USB 的資料 (同步支援)
 serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
     let cmd = serial.readString().trim()
     if (cmd.includes("1")) {
@@ -49,17 +33,11 @@ serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
     }
 })
 
-// 啟動服務
 bluetooth.startUartService()
 serial.redirectToUSB()
 basic.showString("P") // Ready
 ```
 *註：需在專案設定中開啟 "No Pairing Required"。*
 
-## 實驗數據格式 (CSV)
-匯出的 CSV 包含基礎標籤、原始幾何特徵 (Angle/HeightDiff)、模型信心度 (Visibility) 與關鍵點座標。
-
-## 快速啟動
-```bash
-python3 -m http.server 8000
-```
+## 目錄結構與啟動
+(略...)
